@@ -2,10 +2,16 @@ use failure::{Error, bail, format_err};
 use itertools::{join, repeat_n};
 use serde_derive::Deserialize;
 use std::convert::TryInto;
+use std::path::PathBuf;
+use structopt::StructOpt;
+
+const DEFAULT_INDENT: &str = "  ";
 
 fn main() -> Result<(), Error> {
-    let path = std::env::args().nth(1)
-        .ok_or_else(|| format_err!("expected file path arg"))?;
+    let opt = CliOpt::from_args();
+
+    let path = opt.filepath;
+    let indent = opt.indent.unwrap_or_else(|| DEFAULT_INDENT.to_string());
 
     let input = std::fs::read_to_string(&path)?;
 
@@ -15,7 +21,7 @@ fn main() -> Result<(), Error> {
 
     statement.validate()?;
 
-    let sql = statement.clickhouse_sql();
+    let sql = statement.clickhouse_sql(&indent);
 
     println!("{}", sql);
 
@@ -66,9 +72,8 @@ impl Statement {
         Ok(())
     }
 
-    fn clickhouse_sql(&self) -> String {
+    fn clickhouse_sql(&self, indent: &str) -> String {
         let indent_level = 0;
-        let indent = "  ";
 
         let mut selects_working = self.selects.clone();
         let mut joins_working = self.joins.clone();
@@ -285,4 +290,14 @@ impl ProjectionCol {
             self.col.to_owned()
         }
     }
+}
+
+#[derive(Debug, StructOpt)]
+#[structopt(name="moarsql")]
+struct CliOpt {
+    #[structopt(long="indent")]
+    indent: Option<String>,
+
+    #[structopt(parse(from_os_str))]
+    filepath: PathBuf,
 }
