@@ -32,7 +32,6 @@ struct StatementConfig {
 struct SelectConfig {
     table_name: String,
     projections: Vec<String>,
-    condition: Option<String>,
     group_by: Option<String>,
     where_clause: Option<String>,
 }
@@ -202,7 +201,6 @@ impl std::convert::TryFrom<StatementConfig> for Statement {
 struct Select{
     table_name: String,
     projections: Vec<ProjectionCol>,
-    condition: Option<String>,
     group_by: Option<String>,
     where_clause: Option<String>,
 
@@ -235,7 +233,6 @@ impl std::convert::TryFrom<SelectConfig> for Select {
         Ok(Self {
             table_name: select_config.table_name,
             projections,
-            condition: select_config.condition,
             group_by: select_config.group_by,
             where_clause: select_config.where_clause,
 
