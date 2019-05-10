@@ -1,5 +1,5 @@
 use failure::{Error, bail, format_err};
-use itertools::join;
+use itertools::{join, repeat_n};
 use serde_derive::Deserialize;
 use std::convert::TryInto;
 
@@ -15,7 +15,9 @@ fn main() -> Result<(), Error> {
 
     statement.validate()?;
 
-    println!("{:#?}", statement);
+    let sql = statement.clickhouse_sql();
+
+    println!("{}", sql);
 
     Ok(())
 }
@@ -65,12 +67,26 @@ impl Statement {
     }
 
     fn clickhouse_sql(&self) -> String {
-        let mut res = String::new();
+        let indent_level = 0;
+        let indent = "  ";
+
+        let mut res = "SELECT\n".to_owned();
 
         // first do the final select; it's all cols from all selects
-//        res.push_str(
-//            format!("{}"
-//        for 
+        let all_cols = self.selects.iter()
+            .map(|select| {
+                let curr_indent: String = repeat_n(indent, indent_level + 1).collect();
+                let separator = format!(",\n{}", curr_indent);
+
+                format!("{}{}",
+                    curr_indent,
+                    join(select.aliased_projections(), &separator)
+                )
+            });
+        res.push_str(&join(all_cols, ",\n"));
+        res.push_str("\nFROM\n");
+
+        // now start subqueries
 
         res
     }
