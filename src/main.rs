@@ -98,16 +98,22 @@ impl Statement {
 
         let mut res = format!("{}SELECT\n", base_indent);
 
+        // for each subquery's all cols, remove the duplicates (keep first)
+        let mut col_set = std::collections::HashSet::new();
         let all_cols = selects.iter()
-            .map(|select| {
-                let separator = format!(",\n{}", plus_1_indent);
-
-                format!("{}{}",
-                    plus_1_indent,
-                    join(select.aliased_projections(), &separator)
-                )
+            .flat_map(|select| {
+                select.aliased_projections().into_iter()
+            })
+            .filter(|alias| {
+                col_set.insert(alias.clone())
             });
-        res.push_str(&join(all_cols, ",\n"));
+
+        let separator = format!(",\n{}", plus_1_indent);
+        let all_cols_str = format!("{}{}",
+            plus_1_indent,
+            join(all_cols, &separator)
+        );
+        res.push_str(&all_cols_str);
         res.push_str(&format!("\n{}FROM\n", base_indent));
 
         // first half of join
