@@ -120,18 +120,20 @@ impl Statement {
         // subqueries
 
         if selects.len() >= 2 {
+            res.push_str(&format!("{}(\n", plus_1_indent));
             res.push_str(&Self::sql_subquery(
                 selects,
                 joins,
                 indent,
-                indent_level
+                indent_level + 2,
             ));
+            res.push_str(&format!("\n{})", plus_1_indent));
         } else if selects.len() == 1 {
             let join_r = selects.remove(0);
             res.push_str(&Self::select_sql(&join_r, indent, indent_level + 1));
         }
 
-        res.push_str(&format!("\n{}USING {}\n", plus_1_indent, join_col));
+        res.push_str(&format!("\n{}USING {}", plus_1_indent, join_col));
 
         res
     }
