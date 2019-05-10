@@ -34,6 +34,7 @@ struct SelectConfig {
     projections: Vec<String>,
     condition: Option<String>,
     group_by: Option<String>,
+    where_clause: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,33 +72,102 @@ impl Statement {
         let indent = "  ";
 
         let mut selects_working = self.selects.clone();
+        let mut joins_working = self.joins.clone();
 
-        let res = Self::sql_subquery(&mut selects_working, indent, indent_level);
+        let res = Self::sql_subquery(
+            &mut selects_working,
+            &mut joins_working,
+            indent,
+            indent_level,
+        );
 
         res
     }
 
     fn sql_subquery(
         selects: &mut Vec<Select>,
+        joins: &mut Vec<String>,
         indent: &str,
         indent_level: usize
         ) -> String
     {
         let base_indent: String = repeat_n(indent, indent_level).collect();
+        let plus_1_indent: String = repeat_n(indent, indent_level + 1).collect();
+
+        let join_col = joins.remove(0);
+
         let mut res = format!("{}SELECT\n", base_indent);
 
         let all_cols = selects.iter()
             .map(|select| {
-                let curr_indent: String = repeat_n(indent, indent_level + 1).collect();
-                let separator = format!(",\n{}", curr_indent);
+                let separator = format!(",\n{}", plus_1_indent);
 
                 format!("{}{}",
-                    curr_indent,
+                    plus_1_indent,
                     join(select.aliased_projections(), &separator)
                 )
             });
         res.push_str(&join(all_cols, ",\n"));
         res.push_str(&format!("\n{}FROM\n", base_indent));
+
+        // first half of join
+        let join_l = selects.remove(0);
+
+        res.push_str(&Self::select_sql(&join_l, indent, indent_level + 1));
+
+        res.push_str(&format!("\n{}ALL INNER JOIN\n", plus_1_indent));
+
+        // subqueries
+
+        if selects.len() >= 2 {
+            res.push_str(&Self::sql_subquery(
+                selects,
+                joins,
+                indent,
+                indent_level
+            ));
+        } else if selects.len() == 1 {
+            let join_r = selects.remove(0);
+            res.push_str(&Self::select_sql(&join_r, indent, indent_level + 1));
+        }
+
+        res.push_str(&format!("\n{}USING {}\n", plus_1_indent, join_col));
+
+        res
+    }
+
+    fn select_sql(select: &Select, indent: &str, indent_level: usize) -> String {
+        let base_indent: String = repeat_n(indent, indent_level).collect();
+        let plus_1_indent: String = repeat_n(indent, indent_level + 1).collect();
+        let plus_2_indent: String = repeat_n(indent, indent_level + 2).collect();
+
+        let mut res = String::new();
+
+        if select.projections.is_empty() {
+            res.push_str(&format!("{}{}\n",
+                plus_1_indent,
+                select.table_name,
+            ));
+        } else {
+            res.push_str(&format!("{}(\n{}SELECT\n{}",
+                base_indent,
+                plus_1_indent,
+                plus_2_indent,
+            ));
+
+            let separator = format!(",\n{}", plus_2_indent);
+            let select_cols = join(select.projections_sql(), &separator);
+            res.push_str(&select_cols);
+            res.push_str(&format!("\n{}FROM {}", plus_1_indent, select.table_name));
+
+            if let Some(ref group_by) = select.group_by {
+                res.push_str(&format!("\n{}GROUP BY {}", plus_1_indent, group_by));
+            }
+            if let Some(ref where_clause) = select.where_clause {
+                res.push_str(&format!("\n{}WHERE {}", plus_1_indent, where_clause));
+            }
+            res.push_str(&format!("\n{})", base_indent));
+        }
 
         res
     }
@@ -126,6 +196,7 @@ struct Select{
     projections: Vec<ProjectionCol>,
     condition: Option<String>,
     group_by: Option<String>,
+    where_clause: Option<String>,
 
 }
 
@@ -133,6 +204,12 @@ impl Select {
     fn aliased_projections(&self) -> Vec<String> {
         self.projections.iter()
             .map(|p| p.aliased())
+            .collect()
+    }
+
+    fn projections_sql(&self) -> Vec<String> {
+        self.projections.iter()
+            .map(|p| p.sql_string())
             .collect()
     }
 }
@@ -152,6 +229,7 @@ impl std::convert::TryFrom<SelectConfig> for Select {
             projections,
             condition: select_config.condition,
             group_by: select_config.group_by,
+            where_clause: select_config.where_clause,
 
         })
     }
