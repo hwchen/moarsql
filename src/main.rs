@@ -70,10 +70,23 @@ impl Statement {
         let indent_level = 0;
         let indent = "  ";
 
-        let mut res = "SELECT\n".to_owned();
+        let mut selects_working = self.selects.clone();
 
-        // first do the final select; it's all cols from all selects
-        let all_cols = self.selects.iter()
+        let res = Self::sql_subquery(&mut selects_working, indent, indent_level);
+
+        res
+    }
+
+    fn sql_subquery(
+        selects: &mut Vec<Select>,
+        indent: &str,
+        indent_level: usize
+        ) -> String
+    {
+        let base_indent: String = repeat_n(indent, indent_level).collect();
+        let mut res = format!("{}SELECT\n", base_indent);
+
+        let all_cols = selects.iter()
             .map(|select| {
                 let curr_indent: String = repeat_n(indent, indent_level + 1).collect();
                 let separator = format!(",\n{}", curr_indent);
@@ -84,9 +97,7 @@ impl Statement {
                 )
             });
         res.push_str(&join(all_cols, ",\n"));
-        res.push_str("\nFROM\n");
-
-        // now start subqueries
+        res.push_str(&format!("\n{}FROM\n", base_indent));
 
         res
     }
@@ -109,7 +120,7 @@ impl std::convert::TryFrom<StatementConfig> for Statement {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct Select{
     table_name: String,
     projections: Vec<ProjectionCol>,
@@ -146,7 +157,7 @@ impl std::convert::TryFrom<SelectConfig> for Select {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct ProjectionCol {
     col: String,
     alias: Option<String>,
