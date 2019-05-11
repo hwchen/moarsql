@@ -258,8 +258,8 @@ impl std::str::FromStr for ProjectionCol {
         match &s.split(" as ").collect::<Vec<_>>()[..] {
             &[col, alias] => {
                 Ok(ProjectionCol {
-                    col: col.to_owned(),
-                    alias: Some(alias.to_owned()),
+                    col: col.trim().to_owned(),
+                    alias: Some(alias.trim().to_owned()),
                 })
             },
             &[col] => {
