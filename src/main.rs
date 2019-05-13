@@ -60,14 +60,28 @@ impl Statement {
         // check that joins are referencing a col (aliased) on
         // both tables
         for (i, selects) in self.selects.windows(2).enumerate() {
-            let join_col = &self.joins[i]; // should never panic, len checked above
+            let join_tuple = &self.joins[i]; // should never panic, len checked above
 
-            let can_join =
-                selects[0].aliased_projections().contains(join_col)
-                && selects[1].aliased_projections().contains(join_col);
+            // if joining on a tuple
+            let leading_char = join_tuple.chars().nth(0)
+                .ok_or_else(|| format_err!("empty join value not allowed"))?;
+
+            let tuple_cols = if leading_char == '(' {
+                join_tuple.trim_start_matches('(').trim_end_matches(')').split(',')
+                    .map(|s| s.trim().to_owned())
+                    .collect()
+            } else {
+                vec![join_tuple.to_owned()]
+            };
+
+            let can_join = tuple_cols.iter()
+                .all(|col| {
+                    selects[0].aliased_projections().contains(col)
+                    && selects[1].aliased_projections().contains(col)
+                });
 
             if !can_join {
-                bail!("join must match a col or col alias for both tables");
+                bail!("join must match a col or col alias for both tables: {}", join_tuple);
             }
         }
 
