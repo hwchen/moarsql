@@ -30,6 +30,7 @@ fn main() -> Result<(), Error> {
 
 #[derive(Debug, Deserialize)]
 struct StatementConfig {
+    create_table: Option<String>,
     joins: Vec<String>,
     selects: Vec<SelectConfig>,
 }
@@ -44,6 +45,7 @@ struct SelectConfig {
 
 #[derive(Debug, Deserialize)]
 struct Statement {
+    create_table: Option<String>,
     joins: Vec<String>,
     selects: Vec<Select>,
 }
@@ -73,7 +75,11 @@ impl Statement {
     }
 
     fn clickhouse_sql(&self, indent: &str) -> String {
-        let indent_level = 0;
+        let indent_level = if self.create_table.is_some() {
+            1
+        } else {
+            0
+        };
 
         let mut selects_working = self.selects.clone();
         let mut joins_working = self.joins.clone();
@@ -85,7 +91,11 @@ impl Statement {
             indent_level,
         );
 
-        res
+        if let Some(ref create_table) = self.create_table {
+            format!("CREATE TABLE {} AS\n(\n{}\n)", create_table, res)
+        } else {
+            res
+        }
     }
 
     fn sql_subquery(
@@ -196,6 +206,7 @@ impl std::convert::TryFrom<StatementConfig> for Statement {
         let selects = selects?;
 
         Ok(Self {
+            create_table: statement_config.create_table,
             joins: statement_config.joins,
             selects,
         })
