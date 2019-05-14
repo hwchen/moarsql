@@ -122,6 +122,7 @@ impl Statement {
         let base_indent: String = repeat_n(indent, indent_level).collect();
         let plus_1_indent: String = repeat_n(indent, indent_level + 1).collect();
 
+        // early return for no joins
         let join_col = if joins.is_empty() {
             let res = Self::select_sql(&selects[0], indent, indent_level);
             let res = res.trim().trim_start_matches("(\n").trim_end_matches(")").trim_end();
