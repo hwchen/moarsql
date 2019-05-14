@@ -31,7 +31,7 @@ fn main() -> Result<(), Error> {
 #[derive(Debug, Deserialize)]
 struct StatementConfig {
     create_table: Option<String>,
-    joins: Vec<String>,
+    joins: Option<Vec<String>>,
     selects: Vec<SelectConfig>,
 }
 
@@ -228,7 +228,7 @@ impl std::convert::TryFrom<StatementConfig> for Statement {
 
         Ok(Self {
             create_table: statement_config.create_table,
-            joins: statement_config.joins,
+            joins: statement_config.joins.unwrap_or(vec![]),
             selects,
         })
     }
