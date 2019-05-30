@@ -21,7 +21,7 @@ fn main() -> Result<(), Error> {
 
     statement.validate()?;
 
-    let sql = statement.clickhouse_sql(&indent);
+    let sql = statement.clickhouse_sql(&indent, opt.reverse_nesting);
 
     println!("{}", sql);
 
@@ -88,7 +88,7 @@ impl Statement {
         Ok(())
     }
 
-    fn clickhouse_sql(&self, indent: &str) -> String {
+    fn clickhouse_sql(&self, indent: &str, reverse_nesting: bool) -> String {
         let indent_level = if self.create_table.is_some() {
             1
         } else {
@@ -103,6 +103,7 @@ impl Statement {
             &mut joins_working,
             indent,
             indent_level,
+            reverse_nesting,
         );
 
         if let Some(ref create_table) = self.create_table {
@@ -116,7 +117,8 @@ impl Statement {
         selects: &mut Vec<Select>,
         joins: &mut Vec<String>,
         indent: &str,
-        indent_level: usize
+        indent_level: usize,
+        reverse_nesting: bool,
         ) -> String
     {
         let base_indent: String = repeat_n(indent, indent_level).collect();
@@ -151,30 +153,60 @@ impl Statement {
         res.push_str(&all_cols_str);
         res.push_str(&format!("\n{}FROM\n", base_indent));
 
-        // first half of join
-        let join_l = selects.remove(0);
+        if reverse_nesting {
+            // first half of join
+            let join_l = selects.remove(0);
 
-        res.push_str(&Self::select_sql(&join_l, indent, indent_level + 1));
+            res.push_str(&Self::select_sql(&join_l, indent, indent_level + 1));
 
-        res.push_str(&format!("\n{}ALL INNER JOIN\n", plus_1_indent));
+            res.push_str(&format!("\n{}ALL INNER JOIN\n", plus_1_indent));
 
-        // subqueries
+            // subqueries
 
-        if selects.len() >= 2 {
-            res.push_str(&format!("{}(\n", plus_1_indent));
-            res.push_str(&Self::sql_subquery(
-                selects,
-                joins,
-                indent,
-                indent_level + 2,
-            ));
-            res.push_str(&format!("\n{})", plus_1_indent));
-        } else if selects.len() == 1 {
+            if selects.len() >= 2 {
+                res.push_str(&format!("{}(\n", plus_1_indent));
+                res.push_str(&Self::sql_subquery(
+                    selects,
+                    joins,
+                    indent,
+                    indent_level + 2,
+                    reverse_nesting,
+                ));
+                res.push_str(&format!("\n{})", plus_1_indent));
+            } else if selects.len() == 1 {
+                let join_r = selects.remove(0);
+                res.push_str(&Self::select_sql(&join_r, indent, indent_level + 1));
+            }
+
+            res.push_str(&format!("\n{}USING {}", plus_1_indent, join_col));
+        } else {
+            // second half of join pop
             let join_r = selects.remove(0);
-            res.push_str(&Self::select_sql(&join_r, indent, indent_level + 1));
-        }
 
-        res.push_str(&format!("\n{}USING {}", plus_1_indent, join_col));
+            // subqueries
+
+            if selects.len() >= 2 {
+                res.push_str(&format!("{}(\n", plus_1_indent));
+                res.push_str(&Self::sql_subquery(
+                    selects,
+                    joins,
+                    indent,
+                    indent_level + 2,
+                    reverse_nesting,
+                ));
+                res.push_str(&format!("\n{})", plus_1_indent));
+            } else if selects.len() == 1 {
+                let join_l = selects.remove(0);
+                res.push_str(&Self::select_sql(&join_l, indent, indent_level + 1));
+            }
+
+            res.push_str(&format!("\n{}ALL INNER JOIN\n", plus_1_indent));
+
+            // now write the right side of join
+            res.push_str(&Self::select_sql(&join_r, indent, indent_level + 1));
+
+            res.push_str(&format!("\n{}USING {}", plus_1_indent, join_col));
+        }
 
         res
     }
@@ -332,4 +364,7 @@ struct CliOpt {
 
     #[structopt(parse(from_os_str))]
     filepath: PathBuf,
+
+    #[structopt(long="reverse-nesting")]
+    reverse_nesting: bool,
 }
