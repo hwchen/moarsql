@@ -2,6 +2,7 @@ use failure::{Error, bail, format_err};
 use itertools::{join, repeat_n};
 use serde_derive::Deserialize;
 use std::convert::TryInto;
+use std::fmt::{self, Display};
 use std::path::PathBuf;
 use structopt::StructOpt;
 
@@ -33,6 +34,8 @@ struct StatementConfig {
     create_table: Option<String>,
     joins: Option<Vec<String>>,
     selects: Vec<SelectConfig>,
+    #[serde(default)]
+    join_type: JoinType,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +51,7 @@ struct Statement {
     create_table: Option<String>,
     joins: Vec<String>,
     selects: Vec<Select>,
+    join_type: JoinType,
 }
 
 impl Statement {
@@ -104,6 +108,7 @@ impl Statement {
             indent,
             indent_level,
             reverse_nesting,
+            &self.join_type,
         );
 
         if let Some(ref create_table) = self.create_table {
@@ -119,6 +124,7 @@ impl Statement {
         indent: &str,
         indent_level: usize,
         reverse_nesting: bool,
+        join_type: &JoinType,
         ) -> String
     {
         let base_indent: String = repeat_n(indent, indent_level).collect();
@@ -159,7 +165,7 @@ impl Statement {
 
             res.push_str(&Self::select_sql(&join_l, indent, indent_level + 1));
 
-            res.push_str(&format!("\n{}ALL INNER JOIN\n", plus_1_indent));
+            res.push_str(&format!("\n{}ALL {} JOIN\n", plus_1_indent, join_type));
 
             // subqueries
 
@@ -171,6 +177,7 @@ impl Statement {
                     indent,
                     indent_level + 2,
                     reverse_nesting,
+                    join_type,
                 ));
                 res.push_str(&format!("\n{})", plus_1_indent));
             } else if selects.len() == 1 {
@@ -193,6 +200,7 @@ impl Statement {
                     indent,
                     indent_level + 2,
                     reverse_nesting,
+                    join_type,
                 ));
                 res.push_str(&format!("\n{})", plus_1_indent));
             } else if selects.len() == 1 {
@@ -200,7 +208,7 @@ impl Statement {
                 res.push_str(&Self::select_sql(&join_l, indent, indent_level + 1));
             }
 
-            res.push_str(&format!("\n{}ALL INNER JOIN\n", plus_1_indent));
+            res.push_str(&format!("\n{}ALL {} JOIN\n", plus_1_indent, join_type));
 
             // now write the right side of join
             res.push_str(&Self::select_sql(&join_r, indent, indent_level + 1));
@@ -262,6 +270,7 @@ impl std::convert::TryFrom<StatementConfig> for Statement {
             create_table: statement_config.create_table,
             joins: statement_config.joins.unwrap_or(vec![]),
             selects,
+            join_type: statement_config.join_type,
         })
     }
 }
@@ -356,6 +365,42 @@ impl ProjectionCol {
     }
 }
 
+#[derive(Debug, Deserialize)]
+enum JoinType {
+    #[serde(alias="right")]
+    #[serde(alias="RIGHT")]
+    Right,
+
+    #[serde(alias="left")]
+    #[serde(alias="LEFT")]
+    Left,
+
+    #[serde(alias="inner")]
+    #[serde(alias="INNER")]
+    Inner,
+
+    #[serde(alias="outer")]
+    #[serde(alias="OUTER")]
+    Outer,
+}
+
+impl Default for JoinType {
+    fn default() -> Self {
+        JoinType::Inner
+    }
+}
+
+impl Display for JoinType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            JoinType::Right => write!(f, "RIGHT"),
+            JoinType::Left => write!(f, "LEFT"),
+            JoinType::Inner => write!(f, "INNER"),
+            JoinType::Outer => write!(f, "OUTER"),
+        }
+    }
+}
+
 #[derive(Debug, StructOpt)]
 #[structopt(name="moarsql")]
 struct CliOpt {
@@ -368,3 +413,4 @@ struct CliOpt {
     #[structopt(long="reverse-nesting")]
     reverse_nesting: bool,
 }
+
