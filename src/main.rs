@@ -35,7 +35,8 @@ struct StatementConfig {
     joins: Option<Vec<String>>,
     selects: Vec<SelectConfig>,
     #[serde(default)]
-    join_type: JoinType,
+    #[serde(rename="join_type")]
+    global_join_type: JoinType,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,9 +50,8 @@ struct SelectConfig {
 #[derive(Debug, Deserialize)]
 struct Statement {
     create_table: Option<String>,
-    joins: Vec<String>,
+    joins: Vec<(String, JoinType)>,
     selects: Vec<Select>,
-    join_type: JoinType,
 }
 
 impl Statement {
@@ -108,7 +108,6 @@ impl Statement {
             indent,
             indent_level,
             reverse_nesting,
-            &self.join_type,
         );
 
         if let Some(ref create_table) = self.create_table {
@@ -120,18 +119,17 @@ impl Statement {
 
     fn sql_subquery(
         selects: &mut Vec<Select>,
-        joins: &mut Vec<String>,
+        joins: &mut Vec<(String, JoinType)>,
         indent: &str,
         indent_level: usize,
         reverse_nesting: bool,
-        join_type: &JoinType,
         ) -> String
     {
         let base_indent: String = repeat_n(indent, indent_level).collect();
         let plus_1_indent: String = repeat_n(indent, indent_level + 1).collect();
 
         // early return for no joins
-        let join_col = if joins.is_empty() {
+        let (join_col, join_type) = if joins.is_empty() {
             let res = Self::select_sql(&selects[0], indent, indent_level);
             let res = res.trim().trim_start_matches("(\n").trim_end_matches(")").trim_end();
             return res.to_owned();
@@ -177,7 +175,6 @@ impl Statement {
                     indent,
                     indent_level + 2,
                     reverse_nesting,
-                    join_type,
                 ));
                 res.push_str(&format!("\n{})", plus_1_indent));
             } else if selects.len() == 1 {
@@ -200,7 +197,6 @@ impl Statement {
                     indent,
                     indent_level + 2,
                     reverse_nesting,
-                    join_type,
                 ));
                 res.push_str(&format!("\n{})", plus_1_indent));
             } else if selects.len() == 1 {
@@ -266,11 +262,28 @@ impl std::convert::TryFrom<StatementConfig> for Statement {
             .collect();
         let selects = selects?;
 
+        // joins are a little special. the join type can be specified using ::::inner, etc.
+        let global_join_type = statement_config.global_join_type;
+
+        let joins = statement_config.joins.unwrap_or(vec![]).iter()
+            .map(|join_config| {
+                let mut join_statement = join_config.split("::::");
+                let join_col = join_statement.next()
+                    .ok_or_else(|| format_err!("No join col"))?
+                    .to_owned();
+                let local_join_type = match join_statement.next() {
+                    Some(s) => s.parse()?,
+                    None => global_join_type.clone(), // this is already defaulted if not present, through cli
+                };
+
+                Ok((join_col, local_join_type))
+            })
+            .collect::<Result<Vec<(String, JoinType)>, Error>>()?;
+
         Ok(Self {
             create_table: statement_config.create_table,
-            joins: statement_config.joins.unwrap_or(vec![]),
+            joins,
             selects,
-            join_type: statement_config.join_type,
         })
     }
 }
@@ -365,7 +378,7 @@ impl ProjectionCol {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 enum JoinType {
     #[serde(alias="right")]
     #[serde(alias="RIGHT")]
@@ -397,6 +410,20 @@ impl Display for JoinType {
             JoinType::Left => write!(f, "LEFT"),
             JoinType::Inner => write!(f, "INNER"),
             JoinType::Outer => write!(f, "OUTER"),
+        }
+    }
+}
+
+impl std::str::FromStr for JoinType {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "right" | "RIGHT" => Ok(JoinType::Right),
+            "left"  | "LEFT"  => Ok(JoinType::Left),
+            "inner" | "INNER" => Ok(JoinType::Inner),
+            "outer" | "OUTER" => Ok(JoinType::Outer),
+            _ => Err(format_err!("Could not parse string to JoinType"))
         }
     }
 }
